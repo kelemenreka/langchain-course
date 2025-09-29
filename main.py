@@ -1,16 +1,22 @@
 from dotenv import load_dotenv
-from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
-
 # section 3
 from langchain import hub
 from langchain.agents import AgentExecutor
 # runtime of agent, the executor makes the calls
 from langchain.agents.react.agent import create_react_agent
+from langchain_core.prompts import PromptTemplate
+from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
+from langchain_core.output_parsers.pydantic import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableLambda
+
+from prompt import REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS
+from schemas import AgentResponse
 
 load_dotenv()
+
 
 def section2():
     print("Hello from langchain-course!")
@@ -40,18 +46,29 @@ Musk's political activities, views, and statements have made him a polarizing fi
     response = chain.invoke(input={"information": information})
     print(response.content)
 
+
 def section3():
     print("Section 3 - Search Agents")
     tools = [TavilySearch()]
     llm = ChatOpenAI(model="gpt-4")
     react_prompt = hub.pull("hwchase17/react")
+    output_parser = PydanticOutputParser(pydantic_object=AgentResponse)
+    react_prompt_with_format_instructions = PromptTemplate(
+        template=REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS,
+        input_variables=["input", "agent_scratchpad", "tool_names"]
+    ).partial(format_instructions=output_parser.get_format_instructions())
+
+
     agent = create_react_agent(
         llm,
         tools=tools,
-        prompt=react_prompt,
+        prompt=react_prompt_with_format_instructions,
     )
     agent_executer = AgentExecutor(agent=agent, tools=tools, verbose=True)
-    chain = agent_executer
+    extract_output = RunnableLambda(lambda x: x["output"])
+    parse_output = RunnableLambda(lambda x: output_parser.parse(x))
+    chain = agent_executer | extract_output | parse_output
+    
     result = chain.invoke(
         input={
             "input": "search for 3 job postings for an ai engineer using langchain in the bay area on linkedin and list their details"
@@ -62,6 +79,7 @@ def section3():
 
 def main():
     section3()
+
 
 if __name__ == "__main__":
     main()
